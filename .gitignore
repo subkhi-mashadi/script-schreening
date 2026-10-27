@@ -1,0 +1,14 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/.env
+
+# Berkas naskah (rahasia) — jangan pernah di-commit
+backend/storage/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+.DS_Store
