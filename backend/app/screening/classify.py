@@ -32,6 +32,8 @@ RESEARCH = ["metode penelitian", "metodologi penelitian", "hasil penelitian", "r
 PROCEEDINGS = ["prosiding", "seminar nasional", "seminar internasional", "konferensi nasional", "pemakalah"]
 ANTHOLOGY = ["bunga rampai", "antologi", "kumpulan cerpen", "kumpulan puisi", "kumpulan tulisan", "kumpulan esai"]
 REFERENCE = ["kamus", "ensiklopedia", "ensiklopedi", "atlas", "direktori"]
+REFERENCE_DECLARED = ["buku referensi", "buku rujukan"]
+ACADEMIC_AUDIENCE = ["mahasiswa", "akademisi", "dosen", "peneliti", "praktisi", "konsep dan prinsip", "landasan teori", "ilmu"]
 CHILD = ["buku anak", "cerita anak", "bacaan anak", "dongeng", "fabel", "buku cerita bergambar", "untuk anak", "adik-adik"]
 BIOGRAPHY = ["autobiografi", "biografi", "memoar", "memoir", "perjalanan hidup", "kisah hidup", "riwayat hidup", "kisah nyata perjalanan"]
 TRANSLATION = ["diterjemahkan dari", "judul asli", "alih bahasa", "penerjemah", "translated by", "original title", "terjemahan dari"]
@@ -70,6 +72,12 @@ def classify(doc: DocView, layout: dict[str, Any] | None, source_format: str, pu
     biography = _hits(front + " " + preface + " " + heads, BIOGRAPHY)
     all_words = norm(" ".join(b.text for b in blocks)).split()
     first_person = round((all_words.count("aku") + all_words.count("saya")) / max(1, len(all_words)) * 1000, 1)
+    ref_declared = _hits(front + " " + preface, REFERENCE_DECLARED)
+    academic = _hits(preface, ACADEMIC_AUDIENCE)
+    # Buku referensi (Juknis 4.5.1.3 butir 2): pembahasan satu bidang ilmu secara utuh, berdaftar pustaka,
+    # tanpa perangkat pembelajaran (tujuan/latihan soal) dan bukan laporan penelitian.
+    subject_book = (len(refs) >= 5 and dialog_ratio <= 0.05 and first_person < 5 and len(doc.chapters) >= 5
+                    and len(learning) < 2 and len(research) < 2 and bool(academic))
     volume = RE_VOLUME.search(" ".join(b.text for b in doc.front_matter[:30] if len(b.text) <= 120))
     body_pt = None
     images = 0
@@ -85,7 +93,8 @@ def classify(doc: DocView, layout: dict[str, Any] | None, source_format: str, pu
         "penanda_prosiding": proceedings, "penanda_antologi": anthology, "penanda_referensi": reference,
         "penanda_anak": child_words, "penanda_terjemahan": translation, "ukuran_huruf_isi_pt": body_pt,
         "penanda_biografi": biography, "orang_pertama_per_1000_kata": first_person,
-        "gambar_per_1000_kata": images_per_kw,
+        "gambar_per_1000_kata": images_per_kw, "penanda_referensi_dinyatakan": ref_declared, "sasaran_akademik": academic,
+        "bab": len(doc.chapters),
     }
 
     # --- jenis pustaka
@@ -129,13 +138,16 @@ def classify(doc: DocView, layout: dict[str, Any] | None, source_format: str, pu
 
     if proceedings:
         jenis = pick("prosiding", "tinggi", [f"penanda: {', '.join(proceedings)}"])
-    elif reference:
-        jenis = pick("referensi", "sedang", [f"penanda: {', '.join(reference)}"])
+    elif reference or ref_declared:
+        jenis = pick("referensi", "tinggi" if ref_declared else "sedang", [f"penanda: {', '.join(ref_declared or reference)}"])
     elif len(learning) >= 2:
         jenis = pick("buku_ajar", "tinggi" if len(learning) >= 3 else "sedang", [f"subbab pembelajaran: {', '.join(learning[:4])}"])
     elif len(research) >= 2 or (cites >= 10 and refs):
         jenis = pick("buku_ilmiah", "tinggi" if len(research) >= 2 and refs else "sedang",
                      [f"penanda penelitian: {', '.join(research[:4]) or '-'}", f"{cites} sitasi, {len(refs)} entri pustaka"])
+    elif subject_book and not biography:
+        jenis = pick("referensi", "sedang", [f"{len(doc.chapters)} bab satu bidang ilmu, {len(refs)} entri daftar pustaka",
+                                             f"sasaran: {', '.join(academic[:3])}", "tanpa perangkat pembelajaran (tujuan, latihan soal)"])
     elif biography and not fiction:
         jenis = pick("biografi", "tinggi" if len(biography) >= 2 or first_person >= 20 else "sedang",
                      [f"penanda: {', '.join(biography[:3])}", f"kata ganti orang pertama {str(first_person).replace('.', ',')} per 1.000 kata"])

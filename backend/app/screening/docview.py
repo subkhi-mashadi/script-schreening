@@ -69,6 +69,10 @@ class ManuscriptInfo:
     has_submitted_at: bool
 
 
+RE_NUMBERED_SUB = re.compile(r"^\s*\d+(?:\.\d+)+\.?\s")
+RE_TOC_PAGE = re.compile(r"(?:\.{2,}|…|\t|\s)\s*(\d{1,4}|[ivxlc]{1,6})$", re.IGNORECASE)
+
+
 def norm(text: str) -> str:
     """Normalisasi untuk pencocokan: huruf kecil, tanpa aksen/tanda baca, spasi tunggal."""
     t = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
@@ -84,6 +88,7 @@ class DocView:
         self.extraction_status = extraction_status
         self.cache: dict[str, Any] = {}  # dipakai bersama antar-aturan dalam satu eksekusi
         self.layout: dict[str, Any] | None = None  # hasil app.reader.layout, hanya untuk tahap cek layout
+        self._tag_heading_toc()
 
     # --- konstruksi ---------------------------------------------------------
 
@@ -132,6 +137,26 @@ class DocView:
         ]
         return cls(blocks, doc.to_summary(), manuscript, extraction_status)
 
+    def _tag_heading_toc(self) -> None:
+        """Daftar isi yang diketik manual dengan style Heading ("BAB 1 JUDUL 1"): tandai sebagai entri daftar isi agar
+        tidak terbaca sebagai bab. Dimulai setelah heading DAFTAR ISI, berhenti pada heading pertama tanpa nomor halaman."""
+        start = next((b.index for b in self.blocks if b.is_heading and norm(b.text).startswith("daftar isi")), None)
+        if start is None:
+            return
+        seen: set[int | None] = set()
+        for b in self.blocks[start + 1 :]:
+            if not b.is_heading:
+                continue
+            text = b.text.strip()
+            m = RE_CHAPTER.match(text)
+            num = chapter_number(m.group(1)) if m else None
+            # Isi dimulai: heading tanpa nomor halaman, "BAB n" saja, atau nomor bab yang sudah muncul di daftar isi.
+            if not RE_TOC_PAGE.search(text) or (m and (not m.group(2).strip() or num in seen)):
+                break
+            if m:
+                seen.add(num)
+            b.locator = {**b.locator, "role": "toc_entry"}
+
     # --- navigasi struktur ---------------------------------------------------
 
     @cached_property
@@ -140,7 +165,7 @@ class DocView:
 
     @cached_property
     def chapters(self) -> list[Chapter]:
-        heads = [(b, m) for b in self.headings if (m := RE_CHAPTER.match(b.text))]
+        heads = [(b, m) for b in self.headings if not b.is_toc and (m := RE_CHAPTER.match(b.text))]
         result = []
         for i, (h, m) in enumerate(heads):
             end = heads[i + 1][0].index if i + 1 < len(heads) else self._end_of_chapter(h)
@@ -151,7 +176,8 @@ class DocView:
     def _end_of_chapter(self, h: Blk) -> int:
         """Bab terakhir berakhir pada heading level sama/lebih tinggi berikutnya (mis. DAFTAR PUSTAKA)."""
         for b in self.blocks[h.index + 1 :]:
-            if b.is_heading and (b.level or 1) <= (h.level or 1):
+            # Subbab bernomor ("21.1 ...") yang keliru memakai style Heading 1 tetap bagian dari bab.
+            if b.is_heading and (b.level or 1) <= (h.level or 1) and not RE_NUMBERED_SUB.match(b.text):
                 return b.index
         return len(self.blocks)
 

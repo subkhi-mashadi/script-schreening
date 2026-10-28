@@ -1862,6 +1862,9 @@ details.optional[open] > summary {
 .checklist li.warn .check-icon {
   color: var(--warn-text);
 }
+.checklist li.warn {
+  background: color-mix(in srgb, var(--warn-wash) 45%, transparent);
+}
 .checklist li.todo .check-icon {
   color: var(--muted);
 }

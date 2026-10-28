@@ -1424,7 +1424,8 @@ LIMITED_PHRASES = [
     "tidak dijual", "tidak dikomersilkan", "tidak dikomersialkan", "hanya untuk keluarga", "untuk keluarga besar",
     "untuk lingkungan sendiri", "khusus anggota", "untuk anggota", "kenang-kenangan", "kenang kenangan", "cenderamata",
     "cinderamata", "souvenir", "suvenir", "dibagikan secara gratis", "dibagikan kepada", "untuk dibagikan", "hadiah pernikahan",
-    "buku tahunan", "yearbook", "purnabakti", "purna bakti",
+    "buku tahunan", "yearbook", "purnabakti", "purna bakti", "khusus mahasiswa", "khusus siswa", "untuk internal",
+    "bahan ajar internal", "untuk lingkungan kampus",
 ]
 COMMERCIAL_TYPES = ["fiksi", "biografi", "buku_anak", "kompilasi"]
 MEMOIR_MARKERS = ["autobiografi", "memoar", "memoir", "perjalanan hidup", "kisah hidup", "riwayat hidup", "catatan harian", "buku harian"]
@@ -1586,6 +1587,12 @@ def isbn_public_distribution(doc: DocView, cfg: dict) -> Outcome:
     if declared in ("dijual_umum", "gratis_umum"):
         label = "dijual untuk masyarakat umum" if declared == "dijual_umum" else "dapat diakses umum secara gratis"
         return Outcome(observed="pass", evidence=ev, explanation=f"Peredaran dinyatakan {label}; tidak ada pernyataan peredaran terbatas di naskah.")
+    if not commercial:
+        # Juknis 4.5.1.3 butir 1–5: buku ajar umum, monograf/referensi, bunga rampai, KTI diberi ISBN bila dapat diakses
+        # umum, berbayar maupun gratis. Tanpa pernyataan terbatas, naskah dianggap untuk umum.
+        return Outcome(observed="pass", evidence={**ev, "requires_confirmation": False},
+                       explanation="Tidak ada pernyataan peredaran terbatas di naskah. Untuk jenis ini ISBN diberikan bila dapat diakses "
+                       "umum, berbayar maupun gratis (Juknis 4.5.1.3).")
     return Outcome(observed="unknown", evidence=ev,
                    explanation="Naskah tidak menyatakan peredaran terbatas, tetapi rencana peredaran belum dikonfirmasi. "
-                   + ("Jenis ini harus dijual untuk umum." if commercial else "Pilih rencana peredaran buku."))
+                   "Jenis ini harus dijual untuk umum (Juknis 4.5.1.3 butir 6–9).")

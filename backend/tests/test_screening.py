@@ -560,3 +560,52 @@ def test_classifies_biography():
     doc = DocView.from_document(r.document, ManuscriptInfo("x", "lainnya", "id", [], {}, False), r.quality.status)
     c = classify(doc, None, "docx")
     assert c["jenis_terbitan"]["value"] == "biografi" and c["peredaran"]["value"] == "Belum dikonfirmasi"
+
+
+def _reference_book() -> bytes:
+    """Buku satu bidang ilmu: daftar isi diketik ber-style Heading, subbab bab terakhir keliru memakai Heading 1."""
+    import io
+
+    import docx as _docx
+
+    d = _docx.Document()
+    d.add_paragraph("Pengantar Ilmu Ekonomi")
+    d.add_paragraph("Penulis: Rina Pratiwi")
+    d.add_paragraph("Penerbit Dimensi Antara Pustaka")
+    d.add_paragraph("Hak cipta © 2026 pada penulis. Diterbitkan oleh PT Dimensi Antara Pustaka.")
+    d.add_heading("KATA PENGANTAR", level=1)
+    d.add_paragraph("Buku ini disusun untuk membantu mahasiswa memahami konsep dan prinsip dasar ilmu ekonomi.")
+    d.add_heading("DAFTAR ISI", level=1)
+    for n in range(1, 7):
+        d.add_heading(f"BAB {n} TEORI EKONOMI BAGIAN {n} {n * 10}", level=1)
+    for n in range(1, 7):
+        d.add_heading(f"BAB {n} TEORI EKONOMI BAGIAN {n}", level=1)
+        if n == 6:
+            d.add_heading(f"{n}.1 Subbab yang keliru ber-style Heading 1", level=1)
+        for _ in range(3):
+            d.add_paragraph("Permintaan pasar dipengaruhi harga, pendapatan, dan preferensi konsumen dalam jangka pendek maupun panjang.")
+    d.add_heading("DAFTAR PUSTAKA", level=1)
+    for i in range(6):
+        d.add_paragraph(f"Penulis{i}, A. (20{10 + i}). Judul Buku Ekonomi {i}. Jakarta: Penerbit Ilmu.")
+    out = io.BytesIO()
+    d.save(out)
+    return out.getvalue()
+
+
+def test_reference_book_and_heading_toc():
+    from app.reader import extract
+    from app.screening.classify import classify
+    from app.screening.docview import DocView, ManuscriptInfo
+
+    r = extract("docx", _reference_book())
+    doc = DocView.from_document(r.document, ManuscriptInfo("x", "lainnya", "id", [], {}, False), r.quality.status)
+    # Entri daftar isi ber-style Heading tidak dihitung sebagai bab; subbab "6.1" tetap bagian dari BAB 6.
+    assert len(doc.chapters) == 6 and doc.chapters[0].title.startswith("TEORI") and doc.chapters[-1].words > 20
+    assert classify(doc, None, "docx")["jenis_terbitan"]["value"] == "referensi"
+
+
+def test_non_commercial_type_needs_no_distribution(client, auth):
+    """Buku ajar/referensi diberi ISBN bila dapat diakses umum, berbayar maupun gratis: tanpa pernyataan terbatas → lulus."""
+    op = auth("intake_operator")
+    run, comp = isbn_of(client, op, quick(client, op, make_book_docx(), manuscript_type="referensi", distribution=None))
+    assert comp["ISB-014"]["result_status"] == "pass" and run["isbn_status"] == "PASS"

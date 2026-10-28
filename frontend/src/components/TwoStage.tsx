@@ -128,7 +128,7 @@ function IsbnVerdict({ run, onRerun }: { run: ScreeningRun; onRerun: () => void 
   const docs = (items ?? []).filter((c) => c.requires_human_verification && c.result_status !== 'not_applicable')
   const distribution = (items ?? []).find((c) => c.rule_code === 'ISB-014')
   const needsDistribution = distribution?.observed === 'unknown'
-  const failed = required.filter((c) => (c.manual_observed ?? c.observed) !== 'pass')
+  const failed = required.filter((c) => (c.manual_observed ?? c.observed) === 'fail')
   const verdict =
     status === 'PASS'
       ? {
@@ -181,15 +181,25 @@ function IsbnVerdict({ run, onRerun }: { run: ScreeningRun; onRerun: () => void 
           <Card title="Syarat naskah (penentu kelayakan)" sub="Peraturan Perpusnas No. 11 Tahun 2025, Pasal 10 ayat (3) huruf b dan c" flush>
             <ul className="checklist">
               {required.map((c) => {
-                const ok = (c.manual_observed ?? c.observed) === 'pass'
+                const observed = c.manual_observed ?? c.observed
+                // "unknown" = belum dapat dipastikan dari berkas (mis. rencana peredaran belum dipilih): kuning, bukan gagal.
+                const state = observed === 'pass' ? 'ok' : observed === 'fail' ? 'bad' : 'warn'
                 return (
-                  <li key={c.id} className={ok ? 'ok' : 'bad'}>
+                  <li key={c.id} className={state}>
                     <span className="check-icon">
-                      <Icon name={ok ? 'checkCircle' : 'xCircle'} />
+                      <Icon name={state === 'ok' ? 'checkCircle' : state === 'bad' ? 'xCircle' : 'alert'} />
                     </span>
                     <div>
-                      <div className="strong">{c.title}</div>
-                      <div className="small ink-2">{ok ? c.explanation : (FIX[c.rule_code] ?? c.explanation)}</div>
+                      <div className="strong">
+                        {c.title}
+                        {state === 'warn' && (
+                          <>
+                            {' '}
+                            <Pill tone="warn">perlu konfirmasi</Pill>
+                          </>
+                        )}
+                      </div>
+                      <div className="small ink-2">{state === 'bad' ? (FIX[c.rule_code] ?? c.explanation) : c.explanation}</div>
                       <div className="xs muted">
                         {c.source_reference} · <span className="mono">{c.rule_code}</span>
                       </div>
